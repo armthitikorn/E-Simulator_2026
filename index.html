@@ -249,7 +249,7 @@
         let lastCustomerAudioUrl = 'N/A';
         let selectedProductType = ''; 
         
-        // --- ส่วนที่แก้ไขที่ 1: เพิ่มตัวแปร global เพื่อจำชื่อและกลุ่ม ---
+        // --- 1. ประกาศตัวแปรรับค่าชื่อและกลุ่ม ---
         let globalUserName = '';
         let globalUserGroup = '';
         
@@ -260,7 +260,6 @@
         let globalConfig = {}, globalS1Files = {}, globalS2Files = {}, globalS3Files = {}, globalS4Questions = {}, globalS4FollowUpNames = {}, globalS4FollowUpReplies = {}, globalS5Steps = {};
         let selectedRandomFiles = []; 
         
-        // --- Utility: Unlock Audio for iOS ---
         const unlockAudioContext = () => {
             const audio = document.getElementById('mainAudioPlayer');
             if(audio) {
@@ -273,7 +272,6 @@
             }
         };
 
-        // --- Data Fetching ---
         const fetchInitialData = async function() {
             document.getElementById('loadingOverlay').style.display = "flex";
             try {
@@ -329,7 +327,6 @@
             selectedRandomFiles.push(finale ? finale.audio_url : null);
         }
 
-        // --- Audio Player ---
         const playAudio = (url, statusEl, btnToEnable, manualContainerId) => {
             if (manualContainerId) document.getElementById(manualContainerId).innerHTML = '';
             
@@ -370,7 +367,6 @@
             }
         };
 
-        // --- Logic Flows ---
         const endTurn = () => {
             if (turn < maxTurns) {
                 turn++; document.getElementById("turnSpan").textContent = turn;
@@ -434,23 +430,17 @@
             if(window.followUpQBtn) window.followUpQBtn.style.display='none';
         }
 
-        // --- FIXED: playS4 Logic ---
         const playS4 = () => {
             document.getElementById('answerHBtn').disabled = true;
             const isHealth = selectedProductType === 'health';
             
-            // Logic Trigger: Health=Index3 (Q4), Others=Index0 (Q1)
             const isTrigger = isHealth ? (currentHIndex === 3) : (currentHIndex === 0);
-            
             const qList = globalS4Questions[selectedProductType] || [];
-            // Match Question Index (Database uses 1-based, Code uses 0-based index)
             const currentQ = qList.find(q => q.q_index === (currentHIndex + 1));
-            
             const NO_ANSWER_URL = "https://wzwyotzzxycqfwercakh.supabase.co/storage/v1/object/public/responses/part1/P1Q3/health5_P1_P1Q3_1762340907852.webm"; 
             
             let url = NO_ANSWER_URL;
             if (isTrigger && currentQ && currentQ.yes_trigger_url) {
-                // If it's a trigger point AND DB has a URL, use it!
                 url = currentQ.yes_trigger_url;
                 console.log("Playing Trigger Audio:", url);
             }
@@ -488,13 +478,10 @@
             });
         }
 
-        // --- FIXED: playS4FollowUp Logic ---
         const playS4FollowUp = () => {
             window.followUpQBtn.disabled = true;
-            
             const repliesList = globalS4FollowUpReplies[selectedProductType] || [];
             const fileData = repliesList.find(f => f.step_index === followUpStep);
-            
             const player = document.getElementById('mainAudioPlayer');
             const statusEl = document.getElementById("hStatus");
 
@@ -522,7 +509,6 @@
             };
 
             if (fileData && fileData.customer_audio_url) {
-                // If audio exists, play it
                 player.src = fileData.customer_audio_url;
                 statusEl.textContent = `🔊 กำลังเล่นเสียงซักประวัติข้อ ${followUpStep}...`;
                 player.onended = handleFollowUpEnd;
@@ -533,10 +519,9 @@
                     cont.innerHTML = `<button class="retry-audio-btn" onclick="document.getElementById('mainAudioPlayer').play()">🔊 แตะเพื่อฟังเสียงตอบรับ</button>`;
                 });
             } else {
-                // If NO audio found: Log warning, Clear src, and SKIP to next step
                 console.warn(`No audio found for Follow-up Step ${followUpStep} of ${selectedProductType}`);
                 statusEl.textContent = `⚠️ ไม่พบเสียงข้อ ${followUpStep} (ข้าม...)`;
-                player.src = ""; // Clear to prevent playing old sound
+                player.src = ""; 
                 setTimeout(handleFollowUpEnd, 1000);
             }
         }
@@ -580,7 +565,6 @@
             });
         }
 
-        // --- UI Updates ---
         const updateS4UI = () => {
             const d = document.getElementById('healthQuestionDisplay');
             if (isFollowUpMode) {
@@ -609,7 +593,6 @@
             const li = document.getElementById(`reg-step-${step}`); if(li){ li.style.fontWeight='bold'; li.style.color='#007bff'; }
         }
 
-        // --- RECORDING ---
         const toggleRecording = async (type) => {
             let btn, status, nextAction, part, qNum, qText, url = lastCustomerAudioUrl;
             
@@ -653,39 +636,52 @@
 
         const uploadAll = async () => {
             document.getElementById('loadingOverlay').style.display = "flex";
-            document.getElementById('loadingText').textContent = "กำลังอัปโหลดไฟล์...";
+            document.getElementById('loadingText').textContent = "กำลังอัปโหลดไฟล์ และบันทึกข้อมูล...";
             
             let success = 0;
             for (let i = 0; i < allRecordings.length; i++) {
                 const rec = allRecordings[i];
                 const fileName = `${currentUserId}/S${rec.part}/${uuidv4()}.webm`;
                 const { error: upErr } = await window.supabase.storage.from('responses').upload(fileName, rec.audioBlob);
+                
                 if(!upErr) {
                     const { data: { publicUrl } } = window.supabase.storage.from('responses').getPublicUrl(fileName);
                     
-                    // --- ส่วนที่แก้ไขที่ 2: ใช้ชื่อคอลัมน์ part_id, question_num (แปลงเป็น int) และใช้ตัวแปร global ---
-                    await window.supabase.from('submissions').insert([{
+                    // --- 2. เปลี่ยนกลับไปใช้คอลัมน์ part_number และ question_number ดั้งเดิมของคุณ ---
+                    const { error: insertErr } = await window.supabase.from('submissions').insert([{
                         user_id: currentUserId, 
-                        name: globalUserName, 
-                        part_id: parseInt(rec.part, 10), 
-                        question_num: parseInt(rec.qNum, 10), 
+                        name: globalUserName,              // ส่งชื่อที่จำไว้
+                        part_number: rec.part,             // กลับมาใช้ชื่อคอลัมน์ดั้งเดิมของคุณ
+                        question_number: rec.qNum,         // กลับมาใช้ชื่อคอลัมน์ดั้งเดิมของคุณ
                         question_text: rec.qText,
                         audio_url: publicUrl, 
                         insurance_type: selectedProductType, 
-                        user_group: globalUserGroup
+                        user_group: globalUserGroup        // ส่งกลุ่มที่จำไว้
                     }]);
-                    success++;
+
+                    if (insertErr) {
+                        console.error("Database Insert Error:", insertErr);
+                        alert(`เกิดข้อผิดพลาดในการบันทึกข้อมูลข้อ ${rec.qText}:\n${insertErr.message}`);
+                    } else {
+                        success++;
+                    }
+                } else {
+                    console.error("Storage Error:", upErr);
                 }
             }
+            
             document.getElementById('loadingOverlay').style.display = "none";
             
-            if(success === allRecordings.length) { 
+            if(success === allRecordings.length && success > 0) { 
                 document.getElementById("finalSaveBtn").textContent = "✅ เรียบร้อย"; 
                 document.getElementById('certificate').style.display = 'block';
-                document.getElementById('traineeName').textContent = globalUserName; // ใช้ตัวแปร global
+                document.getElementById('traineeName').textContent = globalUserName; // เอาชื่อมาโชว์ในใบประกาศ
                 document.getElementById('issueDate').textContent = new Date().toLocaleDateString('th-TH');
                 document.getElementById("certificate").scrollIntoView();
-            } else { alert("Upload incomplete"); document.getElementById("finalSaveBtn").disabled = false; }
+            } else { 
+                alert(`อัปโหลดสำเร็จ ${success}/${allRecordings.length} รายการ กรุณาลองกดบันทึกใหม่อีกครั้ง`); 
+                document.getElementById("finalSaveBtn").disabled = false; 
+            }
         }
 
         const startTest = function() {
@@ -697,7 +693,7 @@
                 alert("กรุณากรอกข้อมูลให้ครบถ้วน"); return;
             }
             
-            // --- ส่วนที่แก้ไขที่ 3: จำค่าชื่อและกลุ่มลงตัวแปรไว้ใช้ตอนท้าย ---
+            // --- 3. จำชื่อและกลุ่มไว้ใช้ตอนสุดท้าย ---
             globalUserName = userName;
             globalUserGroup = inputUserGroup;
             
